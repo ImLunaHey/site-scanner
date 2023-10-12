@@ -193,14 +193,20 @@ Bun.serve({
             // Get client's IP
             const ipAddress = request.headers.get('x-envoy-external-address') ?? server.requestIP.toString();
 
+            // Check if they're currently limited
+            const limited = ips.has(ipAddress);
+
             // Basic rate limiting
             // Allow one actual request per 10s
             // Users can do unlimited cached queries
-            if (isOutOfDate && ips.has(ipAddress)) return createResponse(<Error message='Rate limited' />);
-            ips.add(ipAddress);
-            setTimeout(() => {
-                ips.delete(ipAddress);
-            }, 10_000);
+            if (isOutOfDate) {
+                if (limited) return createResponse(<Error message='Rate limited' />);
+                console.info('Rate limiting', { ipAddress });
+                ips.add(ipAddress);
+                setTimeout(() => {
+                    ips.delete(ipAddress);
+                }, 10_000);
+            }
 
             // Get most up to date results
             const results = isOutOfDate ? await fetchNewResults(query).then(results => results.data) : resultsMatch!.data;
