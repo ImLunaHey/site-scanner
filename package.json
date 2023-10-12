@@ -2,6 +2,10 @@
   "name": "site-scanner",
   "module": "src/index.ts",
   "type": "module",
+  "scripts": {
+    "dev": "bun run --watch ./src/index.tsx",
+    "start": "bun run ./src/index.tsx"
+  },
   "devDependencies": {
     "@types/react": "^18.2.28",
     "@types/react-dom": "^18.2.13",
