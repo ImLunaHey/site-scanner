@@ -188,7 +188,7 @@ Bun.serve({
             const resultsMatch = force ? await fetchNewResults(query) : await fetchLastResultsMatch(query);
 
             // If the results we got back we're over 2 weeks old generate new ones
-            const isOutOfDate = resultsMatch ? (new Date(resultsMatch._time!).getTime()) <= (Date.now() - TWO_WEEKS) : true;
+            const isOutOfDate = force || (resultsMatch ? (new Date(resultsMatch._time!).getTime()) <= (Date.now() - TWO_WEEKS) : true);
 
             // Get client's IP
             const ipAddress = request.headers.get('x-envoy-external-address') ?? server.requestIP.toString();
