@@ -225,7 +225,7 @@ Bun.serve({
             // Allow one actual request per 10s
             // Users can do unlimited cached queries
             if (isOutOfDate) {
-                if (limited) return createResponse(<Error message='Rate limited' />);
+                if (limited) return createResponse(<Error message={`Rate limited by "${ipAddress}"`} />);
                 console.info(JSON.stringify({ message: 'Rate limiting', meta: { ipAddress } }, null, 0));
                 ips.add(ipAddress);
                 setTimeout(() => {
