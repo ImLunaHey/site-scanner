@@ -179,7 +179,7 @@ function removeEmpty<T>(obj: T): T {
     return Object.fromEntries(
         Object.entries(obj as any)
             .filter(([_, v]) => v != null)
-            .map(([k, v]) => [k, v === Object(v) ? removeEmpty(v) : v])
+            .map(([k, v]) => [k, (typeof v === 'object' && !Array.isArray(v)) ? removeEmpty(v) : v])
     ) as T;
 };
 
