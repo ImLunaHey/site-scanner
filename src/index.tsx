@@ -191,7 +191,7 @@ Bun.serve({
             const isOutOfDate = resultsMatch ? (new Date(resultsMatch._time!).getTime()) <= (Date.now() - TWO_WEEKS) : true;
 
             // Get client's IP
-            const ipAddress = server.requestIP.toString();
+            const ipAddress = request.headers.get('x-envoy-external-address') ?? server.requestIP.toString();
 
             // Basic rate limiting
             // Allow one actual request per 10s
