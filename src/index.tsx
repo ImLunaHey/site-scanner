@@ -22,6 +22,8 @@ const style = `
     }
     body {
         background: var(--primary-colour);
+        color: var(--text-colour);
+        font-family: monospace;
     }
     pre {
         background-color: var(--secondary-colour);
@@ -40,11 +42,24 @@ const style = `
         align-items: center;
         height: 300px;
     }
+    .form-group {
+        width: 75%;
+        display: flex;
+        flex-flow: row;
+    }
     input {
         margin-bottom: 20px;
     }
     button {
         height: 50px;
+    }
+    input[type=checkbox] {
+        width: 10%;
+        height: 20px;
+    }
+    label {
+        width: 90%;
+        font-size: 20px;
     }
     input, button {
         padding: 5px;
@@ -58,9 +73,14 @@ const Styles: React.FC = () => <style>{style}</style>;
 const HomePage: React.FC = () => {
     return (
         <>
+            <title>Site Scanner</title>
             <Styles />
             <form method='GET' action='/'>
-                <input name="q" placeholder='https://google.com' required></input>
+                <input name="q" placeholder='https://google.com' required />
+                <div className="form-group">
+                    <input id="force" type="checkbox" name="force" value="true" />
+                    <label htmlFor="force">Force reload?</label>
+                </div>
                 <button type="submit">Submit</button>
             </form>
         </>
@@ -86,6 +106,7 @@ const ResultsPanel: React.FC<{
     results: ResultsEvent;
 }> = ({ results }) => {
     return <>
+        <title>Site Scanner</title>
         <Styles />
         <pre>{JSON.stringify(results, null, 2)}</pre>
     </>;
@@ -130,7 +151,11 @@ const doChecks = async (query: string) => {
 };
 
 const Error: React.FC<{ message: string }> = ({ message }) => {
-    return <div>Error: {message}</div>;
+    return <>
+        <title>Site Scanner</title>
+        <Styles />
+        <div>Error: {message}</div>
+    </>;
 };
 
 const fetchNewResults = async (query: string) => {
@@ -182,7 +207,7 @@ Bun.serve({
             await axiom.flush();
 
             // Do we actually need to recheck?
-            const force = url.searchParams.get('force');
+            const force = !!url.searchParams.get('force');
 
             // Either fetch new or existing results
             const resultsMatch = force ? await fetchNewResults(query) : await fetchLastResultsMatch(query);
@@ -191,7 +216,7 @@ Bun.serve({
             const isOutOfDate = force || (resultsMatch ? (new Date(resultsMatch._time!).getTime()) <= (Date.now() - TWO_WEEKS) : true);
 
             // Get client's IP
-            const ipAddress = request.headers.get('x-envoy-external-address') ?? server.requestIP.toString();
+            const ipAddress = request.headers.get('x-envoy-external-address') ?? server.requestIP(request)?.address ?? 'unknown';
 
             // Check if they're currently limited
             const limited = ips.has(ipAddress);
