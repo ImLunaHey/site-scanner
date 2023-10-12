@@ -175,6 +175,14 @@ const fetchNewResults = async (query: string) => {
     };
 };
 
+function removeEmpty<T>(obj: T): T {
+    return Object.fromEntries(
+        Object.entries(obj as any)
+            .filter(([_, v]) => v != null)
+            .map(([k, v]) => [k, v === Object(v) ? removeEmpty(v) : v])
+    ) as T;
+};
+
 const fetchLastResultsMatch = async (query: string) => {
     const { hostname } = new URL(query);
     const result = await axiom.query(`['site-scanner'] | where eventType == "result" | where hostname == "${hostname}" | sort by _time desc | limit 1`);
@@ -182,7 +190,7 @@ const fetchLastResultsMatch = async (query: string) => {
     if (!match) return;
     return {
         _time: match?._time,
-        data: match?.data as ResultsEvent,
+        data: removeEmpty(match?.data as ResultsEvent),
     };
 };
 
