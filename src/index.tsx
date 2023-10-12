@@ -216,7 +216,7 @@ Bun.serve({
             const isOutOfDate = force || (resultsMatch ? (new Date(resultsMatch._time!).getTime()) <= (Date.now() - TWO_WEEKS) : true);
 
             // Get client's IP
-            const ipAddress = request.headers.get('x-envoy-external-address') ?? server.requestIP(request)?.address ?? 'unknown';
+            const ipAddress = request.headers.get('X-Forwarded-For')?.split(',')?.[0] ?? server.requestIP(request)?.address ?? 'unknown';
 
             // Check if they're currently limited
             const limited = ips.has(ipAddress);
