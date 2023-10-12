@@ -14,12 +14,56 @@ const axiom = new Axiom({
     orgId: process.env.AXIOM_ORG_ID!,
 });
 
+const style = `
+    :root {
+        --primary-colour:#101010;
+        --secondary-colour:#1d1d1d;
+        --text-colour: #e2e2e2;
+    }
+    body {
+        background: var(--primary-colour);
+    }
+    pre {
+        background-color: var(--secondary-colour);
+        color: var(--text-colour);
+        border: 1px solid silver;
+        padding: 10px 20px;
+        margin: 20px auto;
+        border-radius: 4px;
+        width: 75%;
+        overflow: scroll;
+    }
+    form {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 300px;
+    }
+    input {
+        margin-bottom: 20px;
+    }
+    button {
+        height: 50px;
+    }
+    input, button {
+        padding: 5px;
+        width: 75%;
+        font-size: 20px;
+        font-family: monospace;
+    }
+`;
+const Styles: React.FC = () => <style>{style}</style>;
+
 const HomePage: React.FC = () => {
     return (
-        <form method='GET' action='/'>
-            <input name="q" placeholder='https://google.com'></input>
-            <button type="submit">Submit</button>
-        </form>
+        <>
+            <Styles />
+            <form method='GET' action='/'>
+                <input name="q" placeholder='https://google.com' required></input>
+                <button type="submit">Submit</button>
+            </form>
+        </>
     );
 };
 
@@ -38,10 +82,13 @@ type ResultsEvent = Simplify<Event & {
     checks: any;
 }>;
 
-const CheckSite: React.FC<{
+const ResultsPanel: React.FC<{
     results: ResultsEvent;
 }> = ({ results }) => {
-    return <pre>{JSON.stringify(results, null, 2)}</pre>;
+    return <>
+        <Styles />
+        <pre>{JSON.stringify(results, null, 2)}</pre>
+    </>;
 };
 
 const createResponse = (element: ReactElement) => {
@@ -68,7 +115,7 @@ const resolveIp = (hostname: string, version: '4' | '6') => {
     });
 };
 
-const checkHeaders = async (query: string) => {
+const doChecks = async (query: string) => {
     const { hostname } = new URL(query);
     const response = await fetch(query);
     const rawHeaders = Object.fromEntries(response.headers.entries());
@@ -92,9 +139,7 @@ const fetchNewResults = async (query: string) => {
         eventType: 'result',
         query,
         hostname,
-        checks: {
-            headers: await checkHeaders(query),
-        },
+        checks: await doChecks(query),
     } satisfies ResultsEvent;
 
     axiom.ingest(process.env.AXIOM_DATASET!, [resultsEvent]);
@@ -116,8 +161,10 @@ const fetchLastResultsMatch = async (query: string) => {
     };
 };
 
+const ips = new Set<string>();
+
 Bun.serve({
-    async fetch(request) {
+    async fetch(request, server) {
         try {
             const url = new URL(request.url);
             const query = url.searchParams.get('q')?.toLowerCase();
@@ -142,10 +189,24 @@ Bun.serve({
 
             // If the results we got back we're over 2 weeks old generate new ones
             const isOutOfDate = resultsMatch ? (new Date(resultsMatch._time!).getTime()) <= (Date.now() - TWO_WEEKS) : true;
+
+            // Get client's IP
+            const ipAddress = server.requestIP.toString();
+
+            // Basic rate limiting
+            // Allow one actual request per 10s
+            // Users can do unlimited cached queries
+            if (isOutOfDate && ips.has(ipAddress)) return createResponse(<Error message='Rate limited' />);
+            ips.add(ipAddress);
+            setTimeout(() => {
+                ips.delete(ipAddress);
+            }, 10_000);
+
+            // Get most up to date results
             const results = isOutOfDate ? await fetchNewResults(query).then(results => results.data) : resultsMatch!.data;
 
             // Return results
-            return createResponse(<CheckSite results={results} />);
+            return createResponse(<ResultsPanel results={results} />);
         } catch (error: unknown) {
             return createResponse(<Error message={(error as Error).message} />);
         }
