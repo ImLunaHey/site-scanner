@@ -174,7 +174,7 @@ A 'query' covers a broader scope, encompassing all scans and instances where we 
 
 let queries = 0;
 let scans = 0;
-let lastFetch: number;
+let lastFetch = 0;
 const fetchQueries = async () => {
     lastFetch = Date.now();
     queries = await axiom.query(`['site-scanner'] | where eventType == 'query' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
