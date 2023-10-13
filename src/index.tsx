@@ -81,12 +81,12 @@ const HomePage: React.FC<{ scans?: number; queries?: number; }> = ({ scans = 0, 
             <title>Site Scanner</title>
             <Styles />
             <form method='GET' action='/'>
-                <div className="form-group">
-                    <input name="q" placeholder='https://google.com' required />
-                    <input id="force" type="checkbox" name="force" value="true" />
-                    <label htmlFor="force">Force reload?</label>
+                <div className='form-group'>
+                    <input name='q' placeholder='https://google.com' required />
+                    <input id='force' type='checkbox' name='force' value='true' />
+                    <label htmlFor='force'>Force reload?</label>
                 </div>
-                <button type="submit">Submit</button>
+                <button type='submit'>Submit</button>
             </form>
         </>
     );
@@ -102,18 +102,52 @@ type QueryEvent = Simplify<Event & {
     eventType: 'query';
 }>;
 
+const gradeScale = ['F', 'D-', 'D', 'D+', 'C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+'];
+const calculateGrade = (percentage: number): string => {
+    const index = Math.floor((percentage - 50) / 2.5);
+    if (percentage < 50) return 'F'; // Fail
+    if (index < 0) return 'F'; // Less than 50%
+    if (index >= gradeScale.length) return 'A+'; // 100% or above
+    return gradeScale[index];
+};
+
 type ResultsEvent = Simplify<Event & {
     eventType: 'result';
-    checks: any;
+    checks: {
+        rawHeaders: {
+            [k: string]: string;
+        };
+        ipAddress: {
+            ipv4: string[];
+            ipv6: string[];
+        };
+        headers: {
+            'Strict-Transport-Security': string | null;
+            'Content-Security-Policy': string | null;
+            'X-Frame-Options': string | null;
+            'Referrer-Policy': string | null;
+            'Permissions-Policy': string | null;
+            Server: string | null;
+        };
+    }
 }>;
 
 const ResultsPanel: React.FC<{
     results: ResultsEvent;
 }> = ({ results }) => {
+    const headersIHave = Object.values(results.checks.headers).filter(header => header !== null).length;
+    const percentage = (headersIHave / 6) * 100;
     return <>
         <title>Site Scanner</title>
         <Styles />
-        <pre>{JSON.stringify(results, null, 2)}</pre>
+        <div style={{
+            width: '100%',
+            textAlign: 'center',
+        }}>
+            {/* <div>Score: {calculateGrade(percentage)}</div> */}
+            <div>Query: {results.hostname}</div>
+        </div>
+        <pre>{JSON.stringify(results.checks, null, 2)}</pre>
     </>;
 };
 
@@ -124,8 +158,8 @@ A 'query' covers a broader scope, encompassing all scans and instances where we 
 
 const createResponse = async (element: ReactElement) => {
     // Fetch stats
-    const queries = await axiom.query(`['site-scanner'] | where eventType == "query" | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
-    const scans = await axiom.query(`['site-scanner'] | where eventType == "result" | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+    const queries = await axiom.query(`['site-scanner'] | where eventType == 'query' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+    const scans = await axiom.query(`['site-scanner'] | where eventType == 'result' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
     return new Response(renderToStaticMarkup(<>
         {element}
         <footer><span title={footerDescription}>Scans: {scans}</span> | Queries: {queries}</footer>
@@ -166,10 +200,19 @@ const doChecks = async (query: string) => {
         ipv4: ips.filter(ip => isIPv4(ip)),
         ipv6: ips.filter(ip => isIPv6(ip)),
     };
+    const headers = {
+        'Content-Security-Policy': response.headers.get('Content-Security-Policy'),
+        'Permissions-Policy': response.headers.get('Permissions-Policy'),
+        'Referrer-Policy': response.headers.get('Referrer-Policy'),
+        'Strict-Transport-Security': response.headers.get('Strict-Transport-Security'),
+        'X-Frame-Options': response.headers.get('X-Frame-Options'),
+        Server: response.headers.get('Server'),
+    } satisfies ResultsEvent['checks']['headers'];
     return {
         rawHeaders,
         ipAddress,
-    };
+        headers,
+    } satisfies ResultsEvent['checks'];
 };
 
 const Failure: React.FC<{ message: string }> = ({ message }) => {
@@ -207,7 +250,7 @@ function removeEmpty<T>(obj: T): T {
 
 const fetchLastResultsMatch = async (query: string) => {
     const { hostname } = new URL(query);
-    const result = await axiom.query(`['site-scanner'] | where eventType == "result" | where hostname == "${hostname}" | sort by _time desc | limit 1`);
+    const result = await axiom.query(`['site-scanner'] | where eventType == 'result' | where hostname == '${hostname}' | sort by _time desc | limit 1`);
     const match = result.matches?.[0];
     if (!match) return;
     return {
@@ -262,7 +305,7 @@ Bun.serve({
             // Allow one actual request per 10s
             // Users can do unlimited cached queries
             if (isOutOfDate) {
-                if (limited) return createResponse(<Failure message={`Rate limited by "${ipAddress}"`} />);
+                if (limited) return createResponse(<Failure message={`Rate limited by '${ipAddress}'`} />);
                 console.info(JSON.stringify({ message: 'Rate limiting', meta: { ipAddress } }, null, 0));
                 ips.add(ipAddress);
                 setTimeout(() => {
