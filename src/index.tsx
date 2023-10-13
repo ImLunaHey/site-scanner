@@ -176,10 +176,10 @@ const createResponse = async (element: ReactElement) => {
     // Fetch stats
     const queries = await axiom.query(`['site-scanner'] | where eventType == 'query' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
     const scans = await axiom.query(`['site-scanner'] | where eventType == 'result' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
-    return new Response(minify('<!doctype html>' + renderToStaticMarkup(<>
+    return new Response(minify('<!doctype html><html lang="en"><head><meta name="viewport"></head>' + renderToStaticMarkup(<>
         {element}
         <footer><span title={footerDescription}>Scans: {scans}</span> | Queries: {queries}</footer>
-    </>), {
+    </>) + '</html>', {
         removeComments: true,
         removeRedundantAttributes: true,
         useShortDoctype: true,
@@ -290,6 +290,9 @@ Bun.serve({
         try {
             const url = new URL(request.url);
             const query = url.searchParams.get('q')?.toLowerCase();
+
+            // Allow all traffic to view the whole site
+            if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /');
 
             // Show the Homepage is we don't have a query
             if (!query) return createResponse(<HomePage />);
