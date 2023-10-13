@@ -219,7 +219,7 @@ const fetchLastResultsMatch = async (query: string) => {
 const ips = new Set<string>();
 
 Bun.serve({
-    port: 3000,
+    port: process.env.PORT ?? 3000,
     async fetch(request, server) {
         try {
             const url = new URL(request.url);
