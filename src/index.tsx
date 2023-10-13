@@ -7,6 +7,7 @@ import { Simplify } from 'type-fest';
 import { version } from '../package.json' assert { type: 'json' };
 import { isIPv4, isIPv6 } from 'node:net';
 import outdent from 'outdent';
+import { headerSchema } from './validation';
 
 const ONE_MINUTE = 60 * 1_000;
 const ONE_HOUR = 60 * ONE_MINUTE;
@@ -113,30 +114,30 @@ const calculateGrade = (percentage: number): string => {
 
 type ResultsEvent = Simplify<Event & {
     eventType: 'result';
+    rawHeaders: {
+        [k: string]: string;
+    };
+    ipAddress: {
+        ipv4: string[];
+        ipv6: string[];
+    };
     checks: {
-        rawHeaders: {
-            [k: string]: string;
-        };
-        ipAddress: {
-            ipv4: string[];
-            ipv6: string[];
-        };
         headers: {
-            'Strict-Transport-Security': string | null;
-            'Content-Security-Policy': string | null;
-            'X-Frame-Options': string | null;
-            'Referrer-Policy': string | null;
-            'Permissions-Policy': string | null;
-            Server: string | null;
-        };
+            [k: string]: string;
+        }
+    }
+    info: {
+        providers: {
+            cloudflare: boolean;
+            railway: boolean;
+            vercel: boolean;
+        }
     }
 }>;
 
 const ResultsPanel: React.FC<{
     results: ResultsEvent;
 }> = ({ results }) => {
-    const headersIHave = Object.values(results.checks.headers).filter(header => header !== null).length;
-    const percentage = (headersIHave / 6) * 100;
     return <>
         <title>Site Scanner</title>
         <Styles />
@@ -147,7 +148,15 @@ const ResultsPanel: React.FC<{
             {/* <div>Score: {calculateGrade(percentage)}</div> */}
             <div>Query: {results.hostname}</div>
         </div>
+
+        <h1>Info</h1>
+        <pre>{JSON.stringify(results.info, null, 2)}</pre>
+
+        <h1>Checks</h1>
         <pre>{JSON.stringify(results.checks, null, 2)}</pre>
+        
+        <h1>Raw Headers</h1>
+        <pre>{JSON.stringify(results.rawHeaders, null, 2)}</pre>
     </>;
 };
 
@@ -191,28 +200,12 @@ const options = {
         'user-agent': `site-scanner@${version}`
     },
 };
-const doChecks = async (query: string) => {
-    const { hostname } = new URL(query);
-    const response = await fetch(query, options);
-    const rawHeaders = Object.fromEntries(response.headers.entries());
-    const ips = [await resolveIp(hostname, '4'), await resolveIp(hostname, '6')].flat().filter(Boolean);
-    const ipAddress = {
-        ipv4: ips.filter(ip => isIPv4(ip)),
-        ipv6: ips.filter(ip => isIPv6(ip)),
-    };
-    const headers = {
-        'Content-Security-Policy': response.headers.get('Content-Security-Policy'),
-        'Permissions-Policy': response.headers.get('Permissions-Policy'),
-        'Referrer-Policy': response.headers.get('Referrer-Policy'),
-        'Strict-Transport-Security': response.headers.get('Strict-Transport-Security'),
-        'X-Frame-Options': response.headers.get('X-Frame-Options'),
-        Server: response.headers.get('Server'),
-    } satisfies ResultsEvent['checks']['headers'];
+const doChecks = async (rawHeaders: Record<string, string>) => {
+    const parsedHeaders = headerSchema.safeParse(rawHeaders);
+    const headers = parsedHeaders.success ? Object.fromEntries(Object.keys(parsedHeaders.data).map(key => [key, 'pass'])) : Object.fromEntries(parsedHeaders.error.errors.map(error => [error.path[0], error.message]));
     return {
-        rawHeaders,
-        ipAddress,
         headers,
-    } satisfies ResultsEvent['checks'];
+    };
 };
 
 const Failure: React.FC<{ message: string }> = ({ message }) => {
@@ -225,11 +218,27 @@ const Failure: React.FC<{ message: string }> = ({ message }) => {
 
 const fetchNewResults = async (query: string) => {
     const { hostname } = new URL(query);
+    const response = await fetch(query, options);
+    const rawHeaders = Object.fromEntries(response.headers.entries());
+    const ips = [await resolveIp(hostname, '4'), await resolveIp(hostname, '6')].flat().filter(Boolean);
+    const ipAddress = {
+        ipv4: ips.filter(ip => isIPv4(ip)),
+        ipv6: ips.filter(ip => isIPv6(ip)),
+    };
     const resultsEvent = {
         eventType: 'result',
         query,
         hostname,
-        checks: await doChecks(query),
+        rawHeaders,
+        ipAddress,
+        checks: await doChecks(rawHeaders),
+        info: {
+            providers: {
+                cloudflare: !!Object.keys(rawHeaders).find(header => header.startsWith('cf-'))?.length,
+                railway: rawHeaders.server === 'railway',
+                vercel: !!Object.keys(rawHeaders).find(header => header.startsWith('x-vercel-'))?.length || rawHeaders.server === 'Vercel',
+            }
+        }
     } satisfies ResultsEvent;
 
     axiom.ingest(process.env.AXIOM_DATASET!, [resultsEvent]);
