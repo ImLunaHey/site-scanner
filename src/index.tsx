@@ -3,6 +3,7 @@ import React, { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Axiom } from '@axiomhq/js';
 import { Simplify } from 'type-fest';
+import { version } from '../package.json' assert { type: 'json' };
 
 const ONE_MINUTE = 60 * 1_000;
 const ONE_HOUR = 60 * ONE_MINUTE;
@@ -136,9 +137,14 @@ const resolveIp = (hostname: string, version: '4' | '6') => {
     });
 };
 
+const options = {
+    headers: {
+        'user-agent': `site-scanner@${version}`
+    },
+};
 const doChecks = async (query: string) => {
     const { hostname } = new URL(query);
-    const response = await fetch(query);
+    const response = await fetch(query, options);
     const rawHeaders = Object.fromEntries(response.headers.entries());
     const ipAddress = {
         ipv4: await resolveIp(hostname, '4'),
