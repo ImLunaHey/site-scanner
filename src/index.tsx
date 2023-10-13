@@ -6,6 +6,7 @@ import { Axiom } from '@axiomhq/js';
 import { Simplify } from 'type-fest';
 import { version } from '../package.json' assert { type: 'json' };
 import { isIPv4, isIPv6 } from 'node:net';
+import outdent from 'outdent';
 
 const ONE_MINUTE = 60 * 1_000;
 const ONE_HOUR = 60 * ONE_MINUTE;
@@ -23,10 +24,12 @@ const style = `
         --secondary-colour:#1d1d1d;
         --text-colour: #e2e2e2;
     }
+    * {
+        font-family: monospace;
+    }
     body {
         background: var(--primary-colour);
         color: var(--text-colour);
-        font-family: monospace;
     }
     pre {
         background-color: var(--secondary-colour);
@@ -38,49 +41,48 @@ const style = `
         width: 75%;
         overflow: scroll;
     }
-    form {
+    body {
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        height: 300px;
     }
     .form-group {
-        width: 75%;
         display: flex;
         flex-flow: row;
     }
     input {
         margin-bottom: 20px;
     }
-    button {
-        height: 50px;
-    }
     input[type=checkbox] {
         width: 10%;
-        height: 20px;
-    }
-    label {
-        width: 90%;
-        font-size: 20px;
     }
     input, button {
         padding: 5px;
-        width: 75%;
-        font-size: 20px;
-        font-family: monospace;
+    }
+    input {
+        width: 100%;
+    }
+    form {
+        width: 50%;
+        display: inline-grid;
+        margin-top: 250px;
+    }
+    footer {
+        text-align: center;
+        width: 100%;
     }
 `;
 const Styles: React.FC = () => <style>{style}</style>;
 
-const HomePage: React.FC = () => {
+const HomePage: React.FC<{ scans?: number; queries?: number; }> = ({ scans = 0, queries = 0 }) => {
     return (
         <>
             <title>Site Scanner</title>
             <Styles />
             <form method='GET' action='/'>
-                <input name="q" placeholder='https://google.com' required />
                 <div className="form-group">
+                    <input name="q" placeholder='https://google.com' required />
                     <input id="force" type="checkbox" name="force" value="true" />
                     <label htmlFor="force">Force reload?</label>
                 </div>
@@ -115,8 +117,19 @@ const ResultsPanel: React.FC<{
     </>;
 };
 
-const createResponse = (element: ReactElement) => {
-    return new Response(renderToStaticMarkup(element), {
+const footerDescription = outdent`
+A 'scan' is activated when you make a request on our platform. This typically occurs if the data exceeds a 2-week threshold or if you choose to 'force reload' by checking the corresponding checkbox.
+A 'query' covers a broader scope, encompassing all scans and instances where we display results even if a new scan was not run.
+`;
+
+const createResponse = async (element: ReactElement) => {
+    // Fetch stats
+    const queries = await axiom.query(`['site-scanner'] | where eventType == "query" | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+    const scans = await axiom.query(`['site-scanner'] | where eventType == "result" | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+    return new Response(renderToStaticMarkup(<>
+        {element}
+        <footer><span title={footerDescription}>Scans: {scans}</span> | Queries: {queries}</footer>
+    </>), {
         headers: {
             'content-type': 'text/html',
         }
@@ -159,7 +172,7 @@ const doChecks = async (query: string) => {
     };
 };
 
-const Error: React.FC<{ message: string }> = ({ message }) => {
+const Failure: React.FC<{ message: string }> = ({ message }) => {
     return <>
         <title>Site Scanner</title>
         <Styles />
@@ -206,6 +219,7 @@ const fetchLastResultsMatch = async (query: string) => {
 const ips = new Set<string>();
 
 Bun.serve({
+    port: 3000,
     async fetch(request, server) {
         try {
             const url = new URL(request.url);
@@ -213,6 +227,12 @@ Bun.serve({
 
             // Show the Homepage is we don't have a query
             if (!query) return createResponse(<HomePage />);
+
+            // Check if the query is valid first
+            const hasCorrectSchema = query.startsWith('http://') || query.startsWith('https://');
+            if (!hasCorrectSchema) throw new Error('The URL must begin with http:// or https://');
+            const hasTld = query.split('.')?.[1]?.length >= 2;
+            if (!hasTld) throw new Error('The URL must end with a TLD');
 
             // Record this query
             const queryEvent = {
@@ -242,7 +262,7 @@ Bun.serve({
             // Allow one actual request per 10s
             // Users can do unlimited cached queries
             if (isOutOfDate) {
-                if (limited) return createResponse(<Error message={`Rate limited by "${ipAddress}"`} />);
+                if (limited) return createResponse(<Failure message={`Rate limited by "${ipAddress}"`} />);
                 console.info(JSON.stringify({ message: 'Rate limiting', meta: { ipAddress } }, null, 0));
                 ips.add(ipAddress);
                 setTimeout(() => {
@@ -256,7 +276,7 @@ Bun.serve({
             // Return results
             return createResponse(<ResultsPanel results={results} />);
         } catch (error: unknown) {
-            return createResponse(<Error message={(error as Error).message} />);
+            return createResponse(<Failure message={(error as Error).message} />);
         }
     },
 });
