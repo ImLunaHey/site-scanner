@@ -103,13 +103,23 @@ type QueryEvent = Simplify<Event & {
     eventType: 'query';
 }>;
 
-const gradeScale = ['F', 'D-', 'D', 'D+', 'C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+'];
-const calculateGrade = (percentage: number): string => {
-    const index = Math.floor((percentage - 50) / 2.5);
-    if (percentage < 50) return 'F'; // Fail
-    if (index < 0) return 'F'; // Less than 50%
-    if (index >= gradeScale.length) return 'A+'; // 100% or above
-    return gradeScale[index];
+const calculateSecurityGrade = (headers: Record<string, unknown>) => {
+    // Validate the headers against the schema
+    const parsedHeaders = headerSchema.safeParse(headers);
+
+    // If validation succeeds with no issues, assign A
+    if (parsedHeaders.success) return 'A';
+
+    // Calculate grade based on the number of issues
+    const numIssues = parsedHeaders.error.issues.length;
+
+    // Assign grades based on severity thresholds
+    if (numIssues <= 2) return 'B';
+    if (numIssues <= 4) return 'C';
+    if (numIssues <= 6) return 'D';
+
+    // Default to F for many severe issues
+    return 'F';
 };
 
 type ResultsEvent = Simplify<Event & {
@@ -133,6 +143,7 @@ type ResultsEvent = Simplify<Event & {
             vercel: boolean;
         }
     }
+    grade: 'A' | 'B' | 'C' | 'D' | 'F';
 }>;
 
 const ResultsPanel: React.FC<{
@@ -141,13 +152,6 @@ const ResultsPanel: React.FC<{
     return <>
         <title>Site Scanner</title>
         <Styles />
-        <div style={{
-            width: '100%',
-            textAlign: 'center',
-        }}>
-            {/* <div>Score: {calculateGrade(percentage)}</div> */}
-            <div>Query: {results.hostname}</div>
-        </div>
 
         <h1>Info</h1>
         <pre>{JSON.stringify(results.info, null, 2)}</pre>
@@ -157,6 +161,8 @@ const ResultsPanel: React.FC<{
         
         <h1>Raw Headers</h1>
         <pre>{JSON.stringify(results.rawHeaders, null, 2)}</pre>
+
+        <footer><span title={footerDescription}>Hostname: {results.hostname}</span> | Grade: {results.grade}</footer>
     </>;
 };
 
@@ -202,7 +208,7 @@ const options = {
 };
 const doChecks = async (rawHeaders: Record<string, string>) => {
     const parsedHeaders = headerSchema.safeParse(rawHeaders);
-    const headers = parsedHeaders.success ? Object.fromEntries(Object.keys(parsedHeaders.data).map(key => [key, 'pass'])) : Object.fromEntries(parsedHeaders.error.errors.map(error => [error.path[0], error.message]));
+    const headers = parsedHeaders.success ? Object.fromEntries(Object.keys(parsedHeaders.data).map(key => [key, 'Pass'])) : Object.fromEntries(parsedHeaders.error.errors.map(error => [error.path[0], error.message]));
     return {
         headers,
     };
@@ -238,7 +244,8 @@ const fetchNewResults = async (query: string) => {
                 railway: rawHeaders.server === 'railway',
                 vercel: !!Object.keys(rawHeaders).find(header => header.startsWith('x-vercel-'))?.length || rawHeaders.server === 'Vercel',
             }
-        }
+        },
+        grade: calculateSecurityGrade(rawHeaders),
     } satisfies ResultsEvent;
 
     axiom.ingest(process.env.AXIOM_DATASET!, [resultsEvent]);
