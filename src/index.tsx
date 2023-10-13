@@ -172,10 +172,20 @@ A 'scan' is activated when you make a request on our platform. This typically oc
 A 'query' covers a broader scope, encompassing all scans and instances where we display results even if a new scan was not run.
 `;
 
+let queries = 0;
+let scans = 0;
+let lastFetch: number;
+const fetchQueries = async () => {
+    lastFetch = Date.now();
+    queries = await axiom.query(`['site-scanner'] | where eventType == 'query' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+    scans = await axiom.query(`['site-scanner'] | where eventType == 'result' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+};
+
 const createResponse = async (element: ReactElement) => {
     // Fetch stats
-    const queries = await axiom.query(`['site-scanner'] | where eventType == 'query' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
-    const scans = await axiom.query(`['site-scanner'] | where eventType == 'result' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+    // Only fetch at most once every 10s
+    // This allows for multiple requests right after one another to be quicker
+    if ((lastFetch + 10_000) <= Date.now()) await fetchQueries();
     return new Response(minify('<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="description" content="Site Scanner"><meta name="viewport" content="width=device-width, initial-scale=1"></head>' + renderToStaticMarkup(<>
         {element}
         <footer><span title={footerDescription}>Scans: {scans}</span> | Queries: {queries}</footer>
