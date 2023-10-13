@@ -1,9 +1,11 @@
+import '@total-typescript/ts-reset';
 import { resolve4, resolve6 } from 'node:dns';
 import React, { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Axiom } from '@axiomhq/js';
 import { Simplify } from 'type-fest';
 import { version } from '../package.json' assert { type: 'json' };
+import { isIPv4, isIPv6 } from 'node:net';
 
 const ONE_MINUTE = 60 * 1_000;
 const ONE_HOUR = 60 * ONE_MINUTE;
@@ -146,9 +148,10 @@ const doChecks = async (query: string) => {
     const { hostname } = new URL(query);
     const response = await fetch(query, options);
     const rawHeaders = Object.fromEntries(response.headers.entries());
+    const ips = [await resolveIp(hostname, '4'), await resolveIp(hostname, '6')].flat().filter(Boolean);
     const ipAddress = {
-        ipv4: await resolveIp(hostname, '4'),
-        // ipv6: await resolveIp(hostname, '6'),
+        ipv4: ips.filter(ip => isIPv4(ip)),
+        ipv6: ips.filter(ip => isIPv6(ip)),
     };
     return {
         rawHeaders,
