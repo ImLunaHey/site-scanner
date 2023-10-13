@@ -8,6 +8,7 @@ import { version } from '../package.json' assert { type: 'json' };
 import { isIPv4, isIPv6 } from 'node:net';
 import outdent from 'outdent';
 import { headerSchema } from './validation';
+import { minify } from 'html-minifier';
 
 const ONE_MINUTE = 60 * 1_000;
 const ONE_HOUR = 60 * ONE_MINUTE;
@@ -175,10 +176,16 @@ const createResponse = async (element: ReactElement) => {
     // Fetch stats
     const queries = await axiom.query(`['site-scanner'] | where eventType == 'query' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
     const scans = await axiom.query(`['site-scanner'] | where eventType == 'result' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
-    return new Response(renderToStaticMarkup(<>
+    return new Response(minify('<!doctype html>' + renderToStaticMarkup(<>
         {element}
         <footer><span title={footerDescription}>Scans: {scans}</span> | Queries: {queries}</footer>
     </>), {
+        removeComments: true,
+        removeRedundantAttributes: true,
+        useShortDoctype: true,
+        collapseWhitespace: true,
+        minifyCSS: true,
+    }), {
         headers: {
             'content-type': 'text/html',
         }
