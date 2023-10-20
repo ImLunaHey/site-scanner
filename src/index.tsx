@@ -163,7 +163,7 @@ const ResultsPanel: React.FC<{
         <h1>Raw Headers</h1>
         <pre>{JSON.stringify(results.rawHeaders, null, 2)}</pre>
 
-        <footer><span title={footerDescription}>Hostname: {results.hostname}</span> | Grade: {results.grade}</footer>
+        <footer title={footerDescription}><span>Hostname: {results.hostname}</span> | Grade: {results.grade}</footer>
     </>;
 };
 
@@ -181,7 +181,7 @@ const fetchQueries = async () => {
     scans = await axiom.query(`['site-scanner'] | where eventType == 'result' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
 };
 
-const createResponse = async (element: ReactElement) => {
+const createResponse = async (element: ReactElement, status = 200) => {
     // Fetch stats
     // Only fetch at most once every 10s
     // This allows for multiple requests right after one another to be quicker
@@ -196,6 +196,7 @@ const createResponse = async (element: ReactElement) => {
         collapseWhitespace: true,
         minifyCSS: true,
     }), {
+        status,
         headers: {
             'content-type': 'text/html',
         }
@@ -298,6 +299,9 @@ Bun.serve({
     port: process.env.PORT ?? 3000,
     async fetch(request, server) {
         try {
+            // Get client's IP
+            // This has to happen before any async calls
+            const ipAddress = request.headers.get('X-Forwarded-For')?.split(',')?.[0] ?? server.requestIP(request)?.address ?? 'unknown';
             const url = new URL(request.url);
             const query = url.searchParams.get('q')?.toLowerCase();
 
@@ -321,33 +325,27 @@ Bun.serve({
             } satisfies QueryEvent;
             axiom.ingest(process.env.AXIOM_DATASET!, queryEvent);
             await axiom.flush();
-
+            
             // Do we actually need to recheck?
             const force = !!url.searchParams.get('force');
+
+            // Check if they're currently limited
+            const limited = ips.has(ipAddress);
+
+            // Basic rate limiting
+            // Allow 1 request per 10s
+            if (limited) return createResponse(<Failure message={'Please try again in 10s'} />, 429);
+            console.info(JSON.stringify({ message: 'Rate limiting', meta: { ipAddress } }, null, 0));
+            ips.add(ipAddress);
+            setTimeout(() => {
+                ips.delete(ipAddress);
+            }, 10_000);
 
             // Either fetch new or existing results
             const resultsMatch = force ? await fetchNewResults(query) : await fetchLastResultsMatch(query);
 
             // If the results we got back we're over 2 weeks old generate new ones
             const isOutOfDate = force || (resultsMatch ? (new Date(resultsMatch._time!).getTime()) <= (Date.now() - TWO_WEEKS) : true);
-
-            // Get client's IP
-            const ipAddress = request.headers.get('X-Forwarded-For')?.split(',')?.[0] ?? server.requestIP(request)?.address ?? 'unknown';
-
-            // Check if they're currently limited
-            const limited = ips.has(ipAddress);
-
-            // Basic rate limiting
-            // Allow one actual request per 10s
-            // Users can do unlimited cached queries
-            if (isOutOfDate) {
-                if (limited) return createResponse(<Failure message={`Rate limited by '${ipAddress}'`} />);
-                console.info(JSON.stringify({ message: 'Rate limiting', meta: { ipAddress } }, null, 0));
-                ips.add(ipAddress);
-                setTimeout(() => {
-                    ips.delete(ipAddress);
-                }, 10_000);
-            }
 
             // Get most up to date results
             const results = isOutOfDate ? await fetchNewResults(query).then(results => results.data) : resultsMatch!.data;
