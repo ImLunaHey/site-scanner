@@ -188,7 +188,7 @@ const createResponse = async (element: ReactElement, status = 200) => {
     if ((lastFetch + 10_000) <= Date.now()) await fetchQueries();
     return new Response(minify('<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="description" content="Site Scanner"><meta name="viewport" content="width=device-width, initial-scale=1"></head>' + renderToStaticMarkup(<>
         {element}
-        <footer><span title={footerDescription}>Scans: {scans}</span> | Queries: {queries}</footer>
+        <footer title={footerDescription}><span>Scans: {scans}</span> | Queries: {queries}</footer>
     </>) + '</html>', {
         removeComments: true,
         removeRedundantAttributes: true,
