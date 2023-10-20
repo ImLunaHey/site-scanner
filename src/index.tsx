@@ -163,7 +163,7 @@ const ResultsPanel: React.FC<{
         <h1>Raw Headers</h1>
         <pre>{JSON.stringify(results.rawHeaders, null, 2)}</pre>
 
-        <footer title={footerDescription}><span>Hostname: {results.hostname}</span> | Grade: {results.grade}</footer>
+        <footer><span>Hostname: {results.hostname}</span> | Grade: {results.grade}</footer>
     </>;
 };
 
