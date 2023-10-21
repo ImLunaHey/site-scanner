@@ -204,7 +204,7 @@ const ResultsPanel: React.FC<{
 
         <h1>Checks</h1>
         <pre>{JSON.stringify(results.checks, null, 2)}</pre>
-        
+
         <h1>Raw Headers</h1>
         <pre>{JSON.stringify(results.rawHeaders, null, 2)}</pre>
 
@@ -357,18 +357,18 @@ Bun.serve({
             if (url.pathname === '/.well-known/health') {
                 const fields = {
                     time: new Date().toISOString(),
-                  };
-            
-                  // All is okay
-                  return new Response(JSON.stringify({
+                };
+
+                // All is okay
+                return new Response(JSON.stringify({
                     ...fields,
                     status: 'pass',
-                  }), {
+                }), {
                     status: 200,
                     headers: {
-                      'content-type': 'application/health+json',
+                        'content-type': 'application/health+json',
                     },
-                  });
+                });
             }
 
             // Allow all traffic to view the whole site
@@ -391,7 +391,7 @@ Bun.serve({
             } satisfies QueryEvent;
             axiom.ingest(process.env.AXIOM_DATASET!, queryEvent);
             await axiom.flush();
-            
+
             // Do we actually need to recheck?
             const force = !!url.searchParams.get('force');
 
