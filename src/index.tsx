@@ -104,7 +104,8 @@ const fetchRecentScansData = async () => {
         `['site-scanner'] | sort by _time desc | where eventType == 'result' and isnotempty(grade) | distinct hostname, grade | limit 100 | project hostname, grade`
     )
         .then(result => result.matches?.map(match => match.data)) as { hostname: string; grade: Grade }[];
-    lastTenScans = [...new Set(scans.map(scan => scan.hostname))].map(hostname => scans.find(scan => scan.hostname === hostname)).filter(Boolean);
+    const filteredScans = [...new Set(scans.map(scan => scan.hostname))].map(hostname => scans.find(scan => scan.hostname === hostname)).filter(Boolean);
+    lastTenScans = Array.from({ length: 10 }).map((_, index) => filteredScans[index]);
 };
 
 // Load inital data on app start
