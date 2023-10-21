@@ -81,6 +81,21 @@ const style = `
 `;
 const Styles: React.FC = () => <style>{style}</style>;
 
+type Grade = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
+const gradeColours = {
+    A: '#2ce574',
+    B: '#cdf03a',
+    C: '#ffe500',
+    D: '#ff9600',
+    E: '#ff6c24',
+    F: '#ff3924',
+};
+const ColouredGrade: React.FC<{ grade: Grade }> = ({ grade }) => {
+    return <span style={{
+        color: gradeColours[grade],
+    }}>{grade}</span>
+};
+
 let lastTimeRecentScansDataWasFetched = 0;
 let lastTenScans: { hostname: string; grade: Grade }[] = [];
 const fetchRecentScansData = async () => {
@@ -92,8 +107,10 @@ const fetchRecentScansData = async () => {
 await fetchRecentScansData();
 
 const Scan: React.FC<{ hostname: string; grade: Grade; }> = ({ hostname, grade }) => {
-    return <a href={`/?q=http://${hostname}`}>[{grade}] {hostname}</a>;
-}
+    return <span>
+        [<ColouredGrade grade={grade} />] <a href={`/?q=http://${hostname}`}>{hostname}</a>
+    </span>;
+};
 
 const LatestScans = () => {
     // Fetch recent scans
@@ -130,8 +147,6 @@ type Event = {
 type QueryEvent = Simplify<Event & {
     eventType: 'query';
 }>;
-
-type Grade = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
 
 const calculateSecurityGrade = (headers: Record<string, unknown>): Grade => {
     // Validate the headers against the schema
@@ -193,7 +208,7 @@ const ResultsPanel: React.FC<{
         <h1>Raw Headers</h1>
         <pre>{JSON.stringify(results.rawHeaders, null, 2)}</pre>
 
-        <footer><span>Hostname: {results.hostname}</span> | Grade: {results.grade}</footer>
+        <footer><span>Hostname: {results.hostname}</span> | Grade: <ColouredGrade grade={results.grade} /></footer>
     </>;
 };
 
