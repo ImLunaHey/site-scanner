@@ -100,7 +100,11 @@ let lastTimeRecentScansDataWasFetched = 0;
 let lastTenScans: { hostname: string; grade: Grade }[] = [];
 const fetchRecentScansData = async () => {
     lastTimeRecentScansDataWasFetched = Date.now();
-    lastTenScans = await axiom.query(`['site-scanner'] | sort by _time desc | where eventType == 'result' and isnotempty(grade) | distinct hostname, grade | project hostname, grade | limit 10`).then(result => result.matches?.map(match => match.data)) as { hostname: string; grade: Grade }[];
+    const scans = await axiom.query(
+        `['site-scanner'] | sort by _time desc | where eventType == 'result' and isnotempty(grade) | distinct hostname, grade | limit 100 | project hostname, grade`
+    )
+        .then(result => result.matches?.map(match => match.data)) as { hostname: string; grade: Grade }[];
+    lastTenScans = [...new Set(scans.map(scan => scan.hostname))].map(hostname => scans.find(scan => scan.hostname === hostname)).filter(Boolean);
 };
 
 // Load inital data on app start
