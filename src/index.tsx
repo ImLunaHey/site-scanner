@@ -353,6 +353,24 @@ Bun.serve({
             const url = new URL(request.url);
             const query = url.searchParams.get('q')?.toLowerCase();
 
+            // Health check
+            if (url.pathname === '/.well-known/health') {
+                const fields = {
+                    time: new Date().toISOString(),
+                  };
+            
+                  // All is okay
+                  return new Response(JSON.stringify({
+                    ...fields,
+                    status: 'pass',
+                  }), {
+                    status: 200,
+                    headers: {
+                      'content-type': 'application/health+json',
+                    },
+                  });
+            }
+
             // Allow all traffic to view the whole site
             if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /');
 
