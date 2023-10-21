@@ -32,6 +32,16 @@ const style = `
     body {
         background: var(--primary-colour);
         color: var(--text-colour);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    a {
+        color: var(--text-colour);
+    }
+    span {
+        color: var(--text-colour);
     }
     pre {
         background-color: var(--secondary-colour);
@@ -42,12 +52,6 @@ const style = `
         border-radius: 4px;
         width: 75%;
         overflow: scroll;
-    }
-    body {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
     }
     .form-group {
         display: flex;
@@ -77,6 +81,28 @@ const style = `
 `;
 const Styles: React.FC = () => <style>{style}</style>;
 
+let lastTimeRecentScansDataWasFetched = 0;
+let lastTenScans: { hostname: string; grade: Grade }[] = [];
+const fetchRecentScansData = async () => {
+    lastTimeRecentScansDataWasFetched = Date.now();
+    lastTenScans = await axiom.query(`['site-scanner'] | sort by _time desc | where eventType == 'result' and isnotempty(grade) | distinct hostname, grade | project hostname, grade | limit 10`).then(result => result.matches?.map(match => match.data)) as { hostname: string; grade: Grade }[];
+};
+
+// Load inital data on app start
+await fetchRecentScansData();
+
+const Scan: React.FC<{ hostname: string; grade: Grade; }> = ({ hostname, grade }) => {
+    return <a href={`/?q=http://${hostname}`}>[{grade}] {hostname}</a>;
+}
+
+const LatestScans = () => {
+    // Fetch recent scans
+    // Only fetch at most once every 10s
+    // This allows for multiple requests right after one another to be quicker
+    if ((lastTimeRecentScansDataWasFetched + 10_000) <= Date.now()) void fetchRecentScansData();
+    return <>{lastTenScans.map(scan => <Scan key={scan.hostname} hostname={scan.hostname} grade={scan.grade} />)}</>;
+};
+
 const HomePage: React.FC<{ scans?: number; queries?: number; }> = ({ scans = 0, queries = 0 }) => {
     return (
         <>
@@ -90,6 +116,7 @@ const HomePage: React.FC<{ scans?: number; queries?: number; }> = ({ scans = 0, 
                 </div>
                 <button type='submit'>Submit</button>
             </form>
+            <LatestScans />
         </>
     );
 };
@@ -104,7 +131,9 @@ type QueryEvent = Simplify<Event & {
     eventType: 'query';
 }>;
 
-const calculateSecurityGrade = (headers: Record<string, unknown>) => {
+type Grade = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
+
+const calculateSecurityGrade = (headers: Record<string, unknown>): Grade => {
     // Validate the headers against the schema
     const parsedHeaders = headerSchema.safeParse(headers);
 
@@ -118,6 +147,7 @@ const calculateSecurityGrade = (headers: Record<string, unknown>) => {
     if (numIssues <= 2) return 'B';
     if (numIssues <= 4) return 'C';
     if (numIssues <= 6) return 'D';
+    if (numIssues <= 8) return 'E';
 
     // Default to F for many severe issues
     return 'F';
@@ -144,7 +174,7 @@ type ResultsEvent = Simplify<Event & {
             vercel: boolean;
         }
     }
-    grade: 'A' | 'B' | 'C' | 'D' | 'F';
+    grade: Grade;
 }>;
 
 const ResultsPanel: React.FC<{
@@ -172,23 +202,26 @@ A 'scan' is activated when you make a request on our platform. This typically oc
 A 'query' covers a broader scope, encompassing all scans and instances where we display results even if a new scan was not run.
 `;
 
-let queries = 0;
-let scans = 0;
-let lastFetch = 0;
-const fetchQueries = async () => {
-    lastFetch = Date.now();
-    queries = await axiom.query(`['site-scanner'] | where eventType == 'query' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
-    scans = await axiom.query(`['site-scanner'] | where eventType == 'result' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+let lastTimeFooterDataWasFetched = 0;
+let totalQueries = 0;
+let totalScans = 0;
+const fetchFooterData = async () => {
+    lastTimeFooterDataWasFetched = Date.now();
+    totalQueries = await axiom.query(`['site-scanner'] | where eventType == 'query' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
+    totalScans = await axiom.query(`['site-scanner'] | where eventType == 'result' | count | project count=Count`).then(result => result.matches?.[0].data.count ?? 0).catch(() => 0);
 };
+
+// Load inital data on app start
+await fetchFooterData();
 
 const createResponse = async (element: ReactElement, status = 200) => {
     // Fetch stats
     // Only fetch at most once every 10s
     // This allows for multiple requests right after one another to be quicker
-    if ((lastFetch + 10_000) <= Date.now()) await fetchQueries();
+    if ((lastTimeFooterDataWasFetched + 10_000) <= Date.now()) await fetchFooterData();
     return new Response(minify('<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="description" content="Site Scanner"><meta name="viewport" content="width=device-width, initial-scale=1"></head>' + renderToStaticMarkup(<>
         {element}
-        <footer title={footerDescription}><span>Scans: {scans}</span> | Queries: {queries}</footer>
+        <footer title={footerDescription}><span>Scans: {totalScans}</span> | Queries: {totalQueries}</footer>
     </>) + '</html>', {
         removeComments: true,
         removeRedundantAttributes: true,
@@ -334,12 +367,14 @@ Bun.serve({
 
             // Basic rate limiting
             // Allow 1 request per 10s
-            if (limited) return createResponse(<Failure message={'Please try again in 10s'} />, 429);
-            console.info(JSON.stringify({ message: 'Rate limiting', meta: { ipAddress } }, null, 0));
-            ips.add(ipAddress);
-            setTimeout(() => {
-                ips.delete(ipAddress);
-            }, 10_000);
+            if (limited && force) return createResponse(<Failure message={'Please try again in 10s'} />, 429);
+            if (force) {
+                console.info(JSON.stringify({ message: 'Rate limiting', meta: { ipAddress } }, null, 0));
+                ips.add(ipAddress);
+                setTimeout(() => {
+                    ips.delete(ipAddress);
+                }, 10_000);
+            }
 
             // Either fetch new or existing results
             const resultsMatch = force ? await fetchNewResults(query) : await fetchLastResultsMatch(query);
